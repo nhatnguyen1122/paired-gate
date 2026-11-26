@@ -1,0 +1,6 @@
+gate,n_candidates,cand_rollouts_total,inc_rollouts_distinct,inc_rollouts_distinct_min,inc_rollouts_distinct_max,total_rollouts,total_rollouts_min,total_rollouts_max,amortized_per_decision,unshared_per_decision
+strict,24,4800.0,200.0,200.0,200.0,5000.0,5000.0,5000.0,208.33333333333334,200.0
+signtest_alpha0.05,24,4800.0,200.0,200.0,200.0,5000.0,5000.0,5000.0,208.33333333333334,400.0
+signtest_alpha0.2,24,4800.0,200.0,200.0,200.0,5000.0,5000.0,5000.0,208.33333333333334,400.0
+paired_bayes_eta0.05,24,2836.96,195.17,20.0,200.0,3032.13,500.0,4300.0,126.33875,236.41333333333333
+paired_bayes_eta0.2,24,2481.25,181.73,20.0,200.0,2662.98,500.0,3760.0,110.9575,206.77083333333334

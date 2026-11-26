@@ -1,0 +1,125 @@
+"""SearchQA evaluation metrics: Exact Match, F1, and Substring Match.
+
+Normalization follows the SQuAD convention:
+  - lowercase
+  - remove punctuation
+  - remove articles (a, an, the)
+  - collapse whitespace
+
+Answer extraction looks for <answer>...</answer> XML tags,
+falling back to the last non-empty line of the response.
+"""
+from __future__ import annotations
+
+import re
+import string
+from collections import Counter
+
+
+def normalize_answer(s: str) -> str:
+    """Normalize answer string (SQuAD convention)."""
+    s = s.lower()
+    s = "".join(ch for ch in s if ch not in string.punctuation)
+    s = re.sub(r"\b(a|an|the)\b", " ", s)
+    s = " ".join(s.split())
+    return s.strip()
+
+
+def extract_answer(text: str) -> str:
+    """Extract answer from <answer>...</answer> tags.
+
+    Fallback: last non-empty line, then full response stripped.
+    """
+    # The body may not contain another "<answer>", so an opening tag mentioned in the
+    # reasoning before the real answer is not captured (as in the DocVQA evaluator).
+    matches = re.findall(r"<answer>((?:(?!<answer>).)*?)</answer>", text, re.DOTALL | re.IGNORECASE)
+    if matches:
+        return matches[-1].strip()
+    lines = [ln.strip() for ln in text.strip().splitlines() if ln.strip()]
+    if lines:
+        return lines[-1]
+    return text.strip()
+
+
+def exact_match(prediction: str, gold_answers: list[str]) -> float:
+    norm_pred = normalize_answer(prediction)
+    for gold in gold_answers:
+        if normalize_answer(gold) == norm_pred:
+            return 1.0
+    return 0.0
+
+
+def f1_score(prediction: str, gold_answers: list[str]) -> float:
+    """Token-level F1 (SQuAD-style), max across all gold answers."""
+    norm_pred = normalize_answer(prediction)
+    pred_tokens = norm_pred.split()
+
+    if not pred_tokens:
+        for gold in gold_answers:
+            if not normalize_answer(gold).split():
+                return 1.0
+        return 0.0
+
+    best_f1 = 0.0
+    for gold in gold_answers:
+        gold_tokens = normalize_answer(gold).split()
+        if not gold_tokens:
+            continue
+        common = Counter(pred_tokens) & Counter(gold_tokens)
+        n_common = sum(common.values())
+        if n_common == 0:
+            continue
+        precision = n_common / len(pred_tokens)
+        recall = n_common / len(gold_tokens)
+        f1 = 2 * precision * recall / (precision + recall)
+        best_f1 = max(best_f1, f1)
+
+    return best_f1
+
+
+def sub_em(prediction: str, gold_answers: list[str]) -> float:
+    """1.0 if any normalized gold is a substring of prediction, or vice versa.
+
+    An empty normalized string is a substring of every string, so it only
+    matches another empty string, as in :func:`exact_match` and :func:`f1_score`.
+    """
+    norm_pred = normalize_answer(prediction)
+    for gold in gold_answers:
+        norm_gold = normalize_answer(gold)
+        if not norm_pred or not norm_gold:
+            if norm_pred == norm_gold:
+                return 1.0
+            continue
+        if norm_gold in norm_pred or norm_pred in norm_gold:
+            return 1.0
+    return 0.0
+
+
+def gold_answer_list(gold_answers) -> list[str]:
+    """Return gold answers as a list of strings.
+
+    A single answer (a string or a number) is one item, so a string is not
+    iterated character by character. Numbers, as JSON data can hold them, are
+    compared as text; ``None`` items are dropped.
+    """
+    if not isinstance(gold_answers, (list, tuple)):
+        gold_answers = [gold_answers]
+    return [str(gold) for gold in gold_answers if gold is not None]
+
+
+def evaluate(prediction_text: str, gold_answers: list[str] | str) -> dict:
+    """Evaluate a single QA prediction against gold answers.
+
+    Gold answers are normalized with :func:`gold_answer_list`.
+
+    Returns dict with: em, f1, sub_em, predicted_answer, gold_answers.
+    """
+    gold_answers = gold_answer_list(gold_answers)
+    answer = extract_answer(prediction_text)
+    return {
+        "em": exact_match(answer, gold_answers),
+        "f1": f1_score(answer, gold_answers),
+        "sub_em": sub_em(answer, gold_answers),
+        "predicted_answer": answer,
+        "gold_answers": gold_answers,
+    }

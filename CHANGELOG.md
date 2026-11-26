@@ -1,0 +1,413 @@
+# Changelog
+
+All notable changes to SkillOpt are documented here. This project adheres to
+[Semantic Versioning](https://semver.org/) and the format is based on
+[Keep a Changelog](https://keepachangelog.com/).
+
+## [Unreleased]
+
+### Added
+- **SkillOpt-Sleep leave-one-out edit ablation** (`gate_edit_ablation`, off by
+  default): each skill or memory candidate the night accepts is replayed
+  without each of its edits, and the per-edit observation (gate score with and
+  without the edit, `observed_change`, changed validation tasks, source task
+  and session IDs) is recorded on the trial in `report.md`, `report.json`,
+  `diagnostics.json`, the CLI's `--json` output, and the evidence log. A row is
+  an observed change on one replay, not a causal attribution. Ablation runs
+  after every gate decision of the night, including all fan-out groups, so
+  decisions and accepted edits are unchanged even when the token budget binds.
+  A single-edit candidate needs no extra replay; an N-edit candidate costs up
+  to N validation replays, which are included in `tokens used` and checked
+  against `max_tokens_per_night` one replay at a time. An ablation replay that
+  fails leaves its rows `unmeasured` and is logged as an
+  `edit_ablation_failed` event instead of failing the night, and each ablation
+  event names its fan-out group (`skill`), `night` and `trial_index`.
+  Follow-up to #174.
+- **OfficeQA Parallel Search MCP** as an opt-in `env.search_mode=parallel`
+  provider for `openai_chat`/`qwen_chat`. The default stays `offline` and no
+  config selects Parallel automatically. Selecting it sends the generated
+  search queries and the full task question (as the MCP `objective`) to
+  Parallel's hosted endpoint, over an anonymous, lower-rate free tier, so
+  its scores are not directly comparable to the paper's Google-backed search
+  setting. The MCP client ships in a new `parallel` extra
+  (`pip install 'skillopt[parallel]'`) and is imported lazily, so OfficeQA
+  runs and offline installs do not require `mcp`.
+- **OfficeQA Keenable search** as an opt-in `env.search_mode=keenable`
+  provider for `openai_chat`/`qwen_chat`. The default stays `offline` and no
+  config selects Keenable automatically. Selecting it sends the generated
+  search queries, one request per query, with an `X-Keenable-Title: SkillOpt`
+  header to Keenable's keyless search endpoint; if `KEENABLE_API_KEY` is set,
+  that key is sent in an `X-API-Key` header to the keyed endpoint instead. No
+  key, credential or account is bundled, and service errors fail the rollout
+  with no fallback. It uses the core `httpx` dependency, so it needs no
+  extra. Its scores are not directly comparable to the paper's Google-backed
+  search setting. An API key echoed in an error body is redacted before the
+  text reaches `fail_reason`, and the round deadline is checked again after
+  each response.
+- **SkillOpt-Sleep paired A/B evalkit** (`python -m skillopt_sleep.evalkit`):
+  McNemar plus percentile-bootstrap CIs on a fixed task manifest, with
+  task-cluster multi-seed inference and seeded null calibration for exact-test
+  type-I error and bootstrap coverage. The nightly gate is unchanged
+  (thanks @bogdanbaciu21).
+- **SkillOpt-Sleep multi-skill fan-out and reviewed subset adoption**: each
+  hinted skill is consolidated from its own pinned live baseline, staged as an
+  independent proposal with per-skill gate evidence, and promoted only through
+  an explicit `--skill`, `--all-skills`, or managed `--legacy` choice. Adoption
+  uses a versioned fail-closed manifest, provenance hashes, canonical target
+  pins, immutable backups/receipts, cross-night locking, durable publication,
+  and restart-recoverable transactions. Fan-out discovers native project skill
+  roots, supports repeatable `--skill-root` overrides, and is enabled by
+  `multi_skill_fanout` (`multi_skill_report` remains an alias). MCP adapters
+  enforce typed arguments and preserve engine failures without copying outside
+  the transaction (thanks @bogdanbaciu21, #212).
+- Additive `section_contains` rule-judge operator for literal,
+  case-insensitive matching within numbered, bilingual, or annotated ATX
+  Markdown headings. The legacy `section_present` behavior is unchanged.
+- **OpenCode transcript source** (`--source opencode`) for SkillOpt-Sleep. It
+  reads visible user/assistant text and tool names from OpenCode's local SQLite
+  history without requiring its CLI, login, or a provider connection.
+- **OpenCode CLI backend** (`--backend opencode`) for SkillOpt-Sleep model calls.
+  It uses an installed OpenCode CLI with the user's existing login and
+  file-based global configuration, and supports plain task replay plus opt-in
+  tool-aware replay. Plain calls disable project configuration,
+  model-initiated tool invocation, external plugins, and configured MCP servers.
+  Tool-aware replay exposes only temporary synthetic tools with randomized names
+  and fixed results, verifies which tools OpenCode actually invokes, and never
+  retains or replays historical tool arguments or results.
+- **GitHub Copilot CLI backend**, in two forms: `copilot_chat` (usable as both
+  optimizer and target) and `copilot_exec` (target-only execution harness).
+  Because the Copilot CLI carries its own sign-in, `--backend copilot` selects
+  `copilot_chat` for both roles and runs a complete train/eval loop with no
+  separate provider API key; inference still uses the GitHub Copilot cloud
+  service. Chat calls disable all built-in tools, built-in MCP servers, and
+  custom instructions, strip inherited `COPILOT_ALLOW_ALL`, and never pass
+  `--allow-all-tools`; `copilot_exec` requires an explicit
+  `copilot_exec_allow_all_tools` opt-in before granting unattended tool use.
+  The CLI reports no token counts, so usage totals are zero for these backends.
+- A non-destructive Devin installer and SessionEnd activity marker, preserving
+  existing project hooks across repeated installation.
+- Per-night SkillOpt-Sleep `evidence.jsonl` chains for reconstructing harvest,
+  mining, replay, reflection, and gate decisions, plus a live prompt-template
+  registry with user overrides.
+- Native SkillOpt-Sleep support for Cursor, including a local plugin command
+  and skill, Cursor transcript harvesting, and an optional Cursor Agent CLI
+  backend. Cursor tool-aware replay remains disabled pending live permission-
+  boundary validation.
+- **Cursor Agent research target harness** (`cursor_exec`) for running
+  supported benchmark rollouts through an installed, authenticated
+  `cursor-agent`, with sandboxed workspaces, structured trace capture, and
+  target-only optimizer separation.
+- **Handoff backend** (`--backend handoff`) for SkillOpt-Sleep — runs the
+  sleep cycle with no model subprocess or API key: the engine writes each
+  pending model call to `PROMPTS.md`/`pending.json` (exit code 3) and the
+  user's own agent session answers into `answers/<id>.md`; re-running the
+  same command resumes statelessly from the answers (typically 3–6 rounds
+  per night). Mined tasks are pinned per night so answering sessions cannot
+  shift the task set. Ships a `/skillopt-sleep-handoff` Claude Code command
+  that automates the loop with fresh-context subagents to protect the
+  held-out gate (thanks @dimitarvdenev, #125).
+- **Generic OpenAI-compatible research backend** for optimizer and target
+  calls, with configurable base URL, API key, model, and timeout (thanks
+  @nankingjing, #115).
+- **OpenAI-compatible SkillOpt-Sleep endpoint support** for providers such as
+  DeepSeek and self-hosted vLLM servers (thanks @Alphaxalchemy, #129; hardened
+  in #138).
+- End-to-end wiring for the documented reflection `--preferences` option
+  (thanks @AKhozya, #131).
+
+### Changed
+- **SkillOpt-Sleep legacy adoption confinement**: `adopt` now derives allowed
+  destinations from the caller (`invoked_project`, `skill_search_roots(cfg)`,
+  and explicit `target_skill_path`), treating manifest values as a consistency
+  check. Nights staged prior to this change that lack a recorded `project_root`
+  in `manifest.json` now fail closed with `StagingError` ("missing 'project_root'
+  … Discard and restage this night").
+- Claude Code's Sleep plugin can now use a `pip`/`uv`-installed
+  `skillopt-sleep` when no repository checkout is present (thanks
+  @ichoosetoaccept, #107).
+- Qwen reasoning-model requests now use `max_completion_tokens` and omit
+  unsupported temperature parameters (thanks @chirag127, #128).
+- Configuration files are read explicitly as UTF-8 (thanks @nankingjing,
+  #124).
+- `gradient.max_analyst_rounds` is retired: it was parsed and logged but never
+  reached reflection. Every way of still supplying it (`--max_analyst_rounds`,
+  `--cfg-options`, or a structured or legacy flat config file) is accepted and
+  warns rather than being dropped in silence (reported by @xs229 in #213;
+  implemented by @wilyan09007 in #219).
+- A misspelled SkillOpt-Sleep `backend` or `transcript_source` now stops the
+  run with an error that lists the supported names. Previously it silently
+  fell back to the mock backend or to Claude transcripts, so a scheduled run
+  with a typo appeared to succeed; it now fails until the config is fixed
+  (thanks @Hrushikesh-ramilla, #350, #354).
+- `transcript_source` ignores case and surrounding whitespace, and the
+  normalized name also keys the harvest checkpoint and the tasks document, so
+  `"Codex"` no longer reads a different checkpoint than `"codex"`. A non-string
+  value is rejected with a clear error.
+
+### Fixed
+- SearchQA scores a numeric gold answer instead of failing the rollout.
+  JSON data can store an answer such as `1776` as a number, and
+  `normalize_answer` called `.lower()` on it, so a correct prediction was
+  recorded with hard=0 and an `'int' object has no attribute 'lower'` error.
+  Gold answers are now compared as text, in the evaluator and in the rollout
+  rows (thanks @Shizoqua).
+- LiveMathematicianBench scores a `\boxed{B}` answer as the choice it names.
+  Math-tuned models often box the final choice, inside `<answer>` or on the
+  last line, and `parse_choice_label` read it as the label `\BOXED{B}`, so a
+  correct answer scored 0. The last `\boxed{...}` is now unwrapped before the
+  label is matched (thanks @Shizoqua).
+- SkillOpt-Sleep's local `exact` scorer matches the reference as whole tokens.
+  `exact_score` tested `ref in resp` on normalized text, so a reference of
+  `42` scored hard=1.0 against `420`, and `arXiv:1706.0376` against
+  `arXiv:1706.03762`. `keyword_soft_score` had the same substring check, so
+  `form` counted as found in `information`. Both now compare on token
+  boundaries (thanks @Shizoqua).
+- A SkillOpt-Sleep `replace` edit no longer writes the same learned item twice.
+  `apply_edits_detailed` skips an `add` that is already in the learned block,
+  but `replace` wrote its replacement once per line the anchor matched and
+  did not check the other lines, so the block could hold duplicate bullets.
+  The replacement now goes in once, at the first matching line, and is
+  dropped when another line already holds it (thanks @Shizoqua).
+- SpreadsheetBench `single` and `multi` codegen calls go to the configured
+  target backend. They built an Azure client for every chat target, so an
+  `openai_compatible`, `claude_chat`, `minimax_chat` or `copilot_chat` target
+  failed with "Azure OpenAI endpoint is not configured" or was sent to Azure,
+  and `qwen_chat` skipped its `qwen_chat_*` settings. These targets now go
+  through the shared router, as ReAct mode does; `openai_chat` is unchanged
+  (#445).
+- Repeated rollouts of a SkillOpt-Sleep tool task are separate samples again.
+  `replay_one` forwarded `sample_id` on the text route only, so with
+  `dream_rollouts > 1` a `tool_called` task on a backend without a real tool
+  loop (Pi, Azure, mock) was answered once and that answer was reused for
+  every rollout. `attempt_with_tools` now accepts `sample_id` on every shipped
+  backend; custom overrides without that parameter keep working.
+- SkillOpt-Sleep no longer harvests its own Claude replay sessions as user
+  tasks. The Claude backend now starts every prompt it sends with a
+  `[skillopt-sleep:claude-engine:v1]` producer marker, the same kind of marker
+  the Codex backend uses, and the harvester drops a single-turn session only
+  when its prompt starts with it. This covers custom prompt templates, and a
+  user session that quotes an engine prompt is kept (#310).
+- The nightly cron job from `skillopt-sleep schedule` now runs with the `PATH`
+  it was scheduled from, unless that `PATH` is too long for the cron entry
+  (`schedule` then says so). Under cron's `PATH=/usr/bin:/bin` a Claude CLI
+  from Homebrew or `~/.local/bin` was not found and an nvm Codex CLI exited 127
+  without `node`, so a scheduled Claude or Codex night could not call its
+  model. A `%` in the project path is also escaped now, since cron cut the
+  command there (#447).
+- `insert_after` with a target that ends in a newline now inserts right
+  after that line instead of after the next one, which could file the new
+  text under the following heading or inside a protected region (#407).
+- A flat `--cfg-options` key for an `env` setting (for example `workers=4`)
+  now overrides the YAML value with a structured config instead of being
+  silently replaced by it (#409).
+- In the default force-write slow-update mode
+  (`optimizer.slow_update_gate_with_selection: false`), the skill that receives
+  the epoch-end guidance is now measured once on the selection split, and later
+  step gates compare candidates against that score. Before, the current score
+  stayed at the pre-injection value, and the selection cache stored that gate
+  score with a soft score of `0.0` for the new skill, so a byte-identical later
+  candidate reused both numbers. This adds one selection rollout per epoch
+  boundary in force-write mode (none when the exact skill text is already
+  cached). The validation-best skill and gated mode are unchanged (#404).
+- Close four ways invalid evidence could reach the SkillOpt-Sleep gate: recall
+  no longer brings a content twin of tonight's held-out task into training,
+  a measured tool route no longer credits a self-reported `TOOL_CALL:` marker,
+  judge scores outside 0..1 (including NaN/Infinity) fail closed instead of
+  moving the gate, and learned items survive `apply_edits` round-trips
+  (thanks @bogdanbaciu21, #310).
+- Apply Codex executable and sandbox aliases consistently across inherited
+  YAML, CLI overrides, training, and eval-only entry points. Codex CLI calls
+  now use explicit sandbox and approval settings instead of the retired
+  `--full-auto` flag (thanks @RohithPariki, #220).
+- Preserve fractional rollout hard scores instead of coercing them to binary
+  values (thanks @zixuanguo786-ctrl, #104).
+- Reject duplicate and overlapping IDs while materializing SearchQA manifests
+  (thanks @zixuanguo786-ctrl, #105).
+- Make JSON-array extraction robust to unmatched braces and keep malformed
+  scans linear-time (thanks @zixuanguo786-ctrl, #103; follow-up #136).
+- Package Markdown prompt assets in wheels and tolerate Windows temporary-file
+  cleanup failures (thanks @nankingjing, #135; follow-up #137).
+- Exclude sub-agent transcripts and plugin-generated sessions from Sleep task
+  mining (thanks @codeL1985, #99).
+- Normalize validation-gate density against the proposed edits and handle
+  zero-edit candidates safely (thanks @SparshGarg999, #102).
+- Route optimizer-role MiniMax calls through the MiniMax backend (thanks
+  @jcforever1, #116).
+- Surface Claude CLI spawn failures instead of silently turning them into zero
+  scores (thanks @Phoenix0531-sudo, #126).
+- Improve Claude CLI behavior on Windows, including `.cmd` resolution and
+  long-prompt handling (thanks @codeL1985, #98).
+- Preserve the scheduler's established annealing contract while expanding its
+  endpoint and sequence coverage (thanks @nankingjing, #123; follow-up #133).
+- Stop SearchQA `sub_em` from scoring an empty or article-only answer as a
+  match, and from letting a gold answer that normalizes to empty match every
+  prediction (thanks @Shizoqua).
+- Skip step-level edits whose target runs into a protected slow-update or
+  appendix region, so a `replace` or `delete` can no longer remove the start
+  marker and expose the protected content (thanks @Shizoqua).
+- Score LiveMathematicianBench answers written as `(B)`, `[B]`, or `**B**` as
+  the choice they name instead of marking them wrong (thanks @Shizoqua).
+- Ignore sentence-ending periods when normalizing OfficeQA answers, so a
+  correct answer such as `42.` matches the gold `42` instead of scoring zero
+  exact match and F1 (thanks @Shizoqua).
+- Score the last `<answer>` tag in an OfficeQA response, as SearchQA and
+  LiveMathematicianBench already do, so a model that revises its answer is
+  graded on the revision instead of the draft (thanks @Shizoqua).
+- Skip Claude Code, Codex and Cursor transcript lines that are cut
+  mid-character or are valid JSON but not an object, instead of aborting the
+  whole Sleep harvest (thanks @1AbdullahButt).
+- Compare the Sleep harvest cutoff, stored in local time, with UTC Claude
+  Code, Codex and Pi transcript timestamps as instants rather than strings.
+  East of UTC, sessions that ended in the hours after a harvest were never
+  harvested (thanks @1AbdullahButt).
+- Treat a SearchQA gold answer given as a single string as one answer instead
+  of a sequence of characters, in scoring and in the gold answers recorded on
+  rollout rows. The correct answer was scored as wrong and a one-letter answer
+  as correct (thanks @Shizoqua).
+- Keep the DocVQA answer when a stray `<answer>` or `</answer>` follows the
+  final answer, instead of scoring the wrong text and giving a correct answer
+  ANLS 0 (thanks @Shizoqua).
+- Keep numeric `0` gold answers and ids when loading OfficeQA JSON splits
+  instead of treating them as missing, and load integral floats such as
+  `1776.0` as `1776`, so a correct integer answer is no longer scored wrong
+  (thanks @Shizoqua).
+- Detect SkillOpt-Sleep refusals written with a typographic apostrophe, such as
+  `I can’t help with that.`, so the `no_refusal` rule check no longer gives a
+  bare refusal full credit (thanks @Shizoqua).
+- Ignore an `<answer>` opening tag mentioned in the reasoning before the real
+  answer in SearchQA, LiveMathematicianBench and OfficeQA, as DocVQA already
+  does, instead of scoring the text between them and marking a correct answer
+  wrong (thanks @Shizoqua).
+- Report hard selection accuracy in the run summary's `best_selection_hard`
+  and reused `final_selection_hard` instead of the gate-metric score, which
+  differs under the `soft` and `mixed` gate metrics or the semantic-density
+  bonus (thanks @Shizoqua).
+- SkillOpt-Sleep's Claude backend treats a non-zero `claude -p` exit as a
+  failed call. In text mode the CLI prints an error result such as
+  `API Error: 529 ...` to stdout and exits 1, and that text was scored and
+  cached as the answer, so a re-score after the API recovered got the cached
+  error back. The call now returns an empty response and records the error in
+  `last_call_error`, like the Pi, Codex and Cursor backends (#443).
+
+### Security
+- Prevent managed-identity credentials from being sent to non-Azure or
+  non-HTTPS endpoints, and isolate compatible-provider request extensions
+  from native Azure mode in SkillOpt-Sleep (#138, following
+  @Alphaxalchemy's #129).
+
+### Tests
+- Add focused OpenCode backend coverage and opt-in real-CLI smoke tests for
+  tool-aware replay and a seeded plain cycle.
+- Strengthen SkillOpt-Sleep verifier-discipline assertions, including recorded
+  scores and gate actions (thanks @Tanmay9223, #96).
+- Add focused coverage for the validation-gate decision core and edit-budget
+  schedulers (thanks @nankingjing, #122, #123).
+- Add focused coverage for the DocVQA ANLS evaluator, including the 0.5
+  threshold boundary, the maximum over gold answers, and the accepted gold
+  answer formats (thanks @Shizoqua).
+- Add focused coverage for LiveMathematicianBench choice shuffling: the
+  correct answer keeps its text after relabeling, evaluation batches are
+  deterministic for a seed, loaded items are not mutated, and an epoch covers
+  each training item once (thanks @Shizoqua).
+
+### Acknowledgements 🙏
+Thank you to the contributors behind this unreleased work:
+@AKhozya, @Alphaxalchemy, @Hrushikesh-ramilla, @Phoenix0531-sudo,
+@SparshGarg999, @Tanmay9223, @chirag127, @codeL1985, @dimitarvdenev,
+@bogdanbaciu21, @ichoosetoaccept, @jcforever1, @nankingjing, @wilyan09007,
+@xs229, and @zixuanguo786-ctrl.
+
+## [0.2.0] — 2026-07-02
+
+The headline of this release is **SkillOpt-Sleep**: a nightly offline
+self-evolution engine that harvests a coding agent's real session
+transcripts, mines recurring tasks, replays them offline, and consolidates
+short-term experience into long-term memory and skills — all behind the same
+held-out validation gate that keeps SkillOpt training honest. It ships as a
+decoupled top-level package (`skillopt_sleep/`, zero dependency on the
+research code) and as the new `skillopt-sleep` CLI.
+
+### Added
+- **SkillOpt-Sleep engine** — nightly offline self-evolution cycle
+  (harvest → mine → replay → consolidate) behind a validation gate, exposed
+  as the `skillopt-sleep` console script and `python -m skillopt_sleep`.
+  - Multi-objective reward (accuracy / tokens / latency) with user preferences.
+  - Multi-rollout contrastive reflection under a token/time budget.
+  - Experience replay + controllable dream rollouts (opt-in).
+  - Slow-update long-term memory field (runs even with the gate off).
+  - 3-way train/val/test split with `gate_mode on|off`.
+  - Verifier-discipline validation gate, with a stress-test suite
+    (thanks @Tanmay9223, #87).
+- **Cross-tool backends & plugin shells** for Claude Code, Codex, Copilot,
+  Devin, and OpenClaw:
+  - Codex Desktop transcript harvesting, skill-first Codex integration, and a
+    reviewed task-file flow (thanks @Kirchberg, #48, #49, #60).
+  - GitHub Copilot backend (`CopilotCliBackend`) + research-engine MCP plugin
+    (thanks @Dongbumlee, #50).
+  - Devin plugin: MCP server + ATIF-v1.7 harvest (thanks @xerxes-y, #88).
+  - OpenClaw shell for SkillOpt-Sleep (thanks @Elzlxx, #59).
+- **SearchQA** split materialization helper and fail-fast on systemic rollout
+  failures, with a `searchqa` install extra (thanks @summerview1997,
+  #63, #64, #65).
+- WebUI environment loading and backend preflight (thanks @summerview1997, #63).
+
+### Changed
+- Decoupled the Sleep engine into a standalone top-level `skillopt_sleep/`
+  package with zero dependency on the research code.
+- Made `EnvAdapter.reflect` a shared default so reflect kwargs are no longer
+  dropped (thanks @imshunsuke, #44).
+- English-only pass across the engine, plugins, and docs.
+
+### Fixed
+- Windows robustness for the Claude/Codex backends, plus a hardened JSON
+  fallback path (thanks @Yif-Yang, #79).
+- Reject prose pseudo-JSON wrapped in single quotes/backticks (#82).
+- Surface Codex auth/model/version failures instead of silently scoring 0
+  (thanks @dmmdea, #92).
+- Redact secrets before persisting cycle diagnostics.
+- Configure the `qwen_chat`/`minimax` backends so local LLM endpoints work
+  (thanks @imrehg, #85).
+- Forward the Qwen target timeout and gate `enable_thinking` for vLLM targets
+  (thanks @mvanhorn, #40).
+- Make `--bare` conditional on `ANTHROPIC_API_KEY` (#68), add a
+  `SKILLOPT_SLEEP_PYTHON` override with a lookback-hours first-run fallback
+  (#74), and fix ALFWorld gamefile paths relative to `ALFWORLD_DATA`.
+
+### Packaging
+- Bump `skillopt`, `skillopt.__version__`, and `skillopt_sleep.__version__`
+  to `0.2.0`.
+- Restore `skillopt_webui` to the built wheel (it was dropped when the
+  `packages.find` include list was made explicit).
+- Add the `searchqa` extra and include `json_repair` in the `claude`, `qwen`,
+  and `all` extras.
+
+### Acknowledgements 🙏
+v0.2.0 landed thanks to our community contributors — thank you!
+
+- @Kirchberg — Codex Desktop harvesting, skill-first Codex integration,
+  reviewed task-file flow (#48, #49, #60)
+- @Dongbumlee — GitHub Copilot backend + research-engine MCP plugin (#50)
+- @summerview1997 — SearchQA materialization, rollout fail-fast, WebUI
+  preflight (#63, #64, #65)
+- @xerxes-y — Devin plugin: MCP server + ATIF-v1.7 harvest (#88)
+- @Elzlxx — OpenClaw shell for SkillOpt-Sleep (#59)
+- @imshunsuke — shared `EnvAdapter.reflect` default + docs fixes (#43, #44)
+- @mvanhorn — Qwen timeout forwarding + `enable_thinking` gating (#40)
+- @dmmdea — surface Codex auth/model/version failures (#92)
+- @Tanmay9223 — verifier-discipline stress test (#87)
+- @imrehg — `configure_qwen_chat` for local LLM endpoints (#85)
+- @samuelgoofus-boop — community contributions
+
+Special thanks to @Yif-Yang for driving the SkillOpt-Sleep engine.
+
+**Full changelog:** https://github.com/microsoft/SkillOpt/compare/v0.1.0...v0.2.0
+
+## [0.1.0] — 2026-06-02
+
+Initial public release: the full training loop (rollout → reflect →
+aggregate → select → update → evaluate), multi-backend support
+(OpenAI / Azure / Claude / Qwen / MiniMax), six built-in benchmarks, and the
+WebUI dashboard.
+
+[0.2.0]: https://github.com/microsoft/SkillOpt/releases/tag/v0.2.0
+[0.1.0]: https://github.com/microsoft/SkillOpt/releases/tag/v0.1.0

@@ -1,0 +1,34 @@
+# Cheap SearchQA config for the Mistral API (paired-gate study).
+# Usage: source scripts/mistral_env.sh && python scripts/train.py --config configs/searchqa/mistral_small.yaml
+_base_: default.yaml
+
+model:
+  backend: openai_compatible
+  optimizer_backend: openai_compatible
+  target_backend: openai_compatible
+  optimizer: mistral-large-latest
+  target: ministral-8b-latest
+  reasoning_effort: ""
+  rewrite_reasoning_effort: ""
+  rewrite_max_completion_tokens: 8000
+
+train:
+  num_epochs: 1
+  batch_size: 20
+
+gradient:
+  analyst_workers: 4
+  minibatch_size: 8
+  merge_batch_size: 8
+
+optimizer:
+  use_slow_update: false
+  use_meta_skill: false
+
+evaluation:
+  gate_type: strict        # strict (upstream, default) | signtest | paired_bayes
+  eval_test: true
+
+env:
+  max_completion_tokens: 1024
+  workers: 8

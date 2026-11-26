@@ -1,0 +1,15 @@
+# E2 closed loop: same seed/config for both arms, only the gate differs.
+_base_: mistral_small.yaml
+
+train:
+  seed: 42
+
+evaluation:
+  gate_type: strict
+  paired_eta: 0.05
+  sel_env_num: 200
+  max_target_rollouts: 3000
+  eval_test: false
+
+env:
+  out_root: runs/e2_strict
